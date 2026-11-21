@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the app's own Download folder (the Android 9 and older fallback) and the VidDown folder of the main storage can be shared through FileProvider. -->
+<paths>
+    <external-files-path name="downloads" path="Download/" />
+    <external-path name="viddown_root" path="VidDown/" />
+</paths>

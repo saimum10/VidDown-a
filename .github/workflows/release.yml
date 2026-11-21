@@ -1,0 +1,187 @@
+name: release
+
+# Builds one debug and one release APK per ABI (arm64-v8a, armeabi-v7a, x86, x86_64) and attaches them to a DRAFT GitHub release. It never publishes by itself:
+# a person reviews the draft and presses "Publish". Ordinary commits never trigger it.
+# Trigger: push a tag like v0.1.0, or run it manually and give the version.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to create, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build APKs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      signed: ${{ steps.sign.outputs.signed }}
+    steps:
+      - name: Check the version
+        env:
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          # The version becomes part of every file name. A stray character (for example a trailing backslash typed into the manual run)
+          # turns "viddown-v0.1.6\-release.apk" into a folder when the artifact is unpacked, and the upload of the release then fails.
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::Version '$VERSION' is not valid. Use the form v0.1.6 (or v0.1.6-rc.1): no spaces, no backslash, no other characters."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require the Android project
+        run: |
+          if [ ! -f gradlew ]; then
+            echo "::error::gradlew not found. The Android project (Phase 2) has not been created, so there is nothing to release."
+            exit 1
+          fi
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          # NewPipeExtractor's own build picks its JDK toolchain (17 for v0.27.x, 11 for v0.26.x and older, 21 only for its checkstyle,
+          # which we never run); 17 is listed last so it runs Gradle and the app build. 21 is installed only so a future toolchain bump does not break the build.
+          java-version: |
+            11
+            21
+            17
+      - name: Let Gradle toolchains find JDK 11, 17 and 21
+        run: mkdir -p "$HOME/.gradle" && echo "org.gradle.java.installations.fromEnv=JAVA_HOME_11_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64" >> "$HOME/.gradle/gradle.properties"
+      - name: Fetch the LATEST NewPipeExtractor release (built from source; not stored in the repository)
+        run: python3 scripts/fetch_newpipe.py ensure
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: Restore verified native bundle cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/native-bundle
+          key: native-bundle-${{ hashFiles('native/bundle.lock.json') }}
+      - name: Fetch and verify the pinned native bundle
+        run: python3 scripts/fetch_native_bundle.py fetch --cache-dir .cache/native-bundle --out build/native
+      - name: Run unit tests and lint once (a release is never built from failing tests)
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest :engine-api:test :engine-direct:test :engine-newpipe:test :engine-ytdlp:test :download:test :browser:test lintDebug -PnativeDir=build/native -PnativeAbis="" -PsourceRepoUrl="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+      - name: Collect test results and lint reports for the release
+        run: mkdir -p dist && python3 scripts/collect_reports.py --out dist/test-and-lint-reports.zip
+      - name: ABIs to build (owner decision - all four, unverified ones are labelled)
+        id: abis
+        run: |
+          list="arm64-v8a,armeabi-v7a,x86,x86_64"
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          verified="$(python3 scripts/verified_abis.py)"
+          echo "Building one APK per ABI: $list"
+          echo "ABIs with a PASS runtime check in native/bundle.lock.json: ${verified:-none}"
+          if [ -z "$verified" ]; then
+            echo "::warning::No ABI has a PASS runtime verification yet. All four are included at the owner's request and are labelled NOT VERIFIED in the release notes."
+          fi
+      - name: Prepare signing (only if all four secrets exist)
+        id: sign
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASS" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            {
+              echo "VIDDOWN_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore"
+              echo "VIDDOWN_KEYSTORE_PASSWORD=$KS_PASS"
+              echo "VIDDOWN_KEY_ALIAS=$KEY_ALIAS"
+              echo "VIDDOWN_KEY_PASSWORD=$KEY_PASS"
+            } >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing secrets are missing: the release APK will be UNSIGNED and labelled as such."
+          fi
+      - name: Build one debug and one release APK per ABI
+        env:
+          SIGNED: ${{ steps.sign.outputs.signed }}
+          ABIS: ${{ steps.abis.outputs.list }}
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for abi in ${ABIS//,/ }; do
+            echo "::group::Gradle build for $abi"
+            rm -rf app/build/outputs/apk
+            ./gradlew --stacktrace :app:assembleDebug :app:assembleRelease -PnativeDir=build/native -PnativeAbis="$abi" -PsourceRepoUrl="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+            echo "::endgroup::"
+            found=0
+            for f in $(find app/build/outputs/apk -name '*.apk'); do
+              variant="$(basename "$(dirname "$f")")"      # debug or release
+              if [ "$variant" = "release" ] && [ "$SIGNED" != "true" ]; then suffix="-UNSIGNED"; else suffix=""; fi
+              cp "$f" "dist/viddown-${VERSION}-${variant}-${abi}${suffix}.apk"
+              found=$((found + 1))
+            done
+            [ "$found" -ge 2 ] || { echo "::error::Gradle produced $found APKs for $abi, expected debug and release"; exit 1; }
+          done
+          ls -l dist
+      - name: Write notes, build metadata and checksums
+        env:
+          SIGNED: ${{ steps.sign.outputs.signed }}
+          ABIS: ${{ steps.abis.outputs.list }}
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          cp build/native/BUILD_INFO.native.json dist/BUILD_INFO.native.json
+          cp third_party/newpipe.resolved.json dist/BUILD_INFO.newpipe.json
+          NEWPIPE_JSON="$(python3 -c 'import json; d = json.load(open("third_party/newpipe.resolved.json")); print(json.dumps({"extractor_tag": d["extractor"]["tag"], "extractor_commit": d["extractor"]["commit"], "nanojson_commit": d["nanojson"]["commit"]}))')"
+          cat > dist/BUILD_INFO.app.json <<JSON
+          {
+            "version": "${VERSION}",
+            "app_commit": "${GITHUB_SHA}",
+            "workflow_run": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}",
+            "release_apk_signed": ${SIGNED},
+            "abis_built": "${ABIS}",
+            "native_bundle": "see BUILD_INFO.native.json (one release per tool: exact tags, commits, SHA-256 per tool and ABI)",
+            "newpipe": ${NEWPIPE_JSON}
+          }
+          JSON
+          python3 scripts/release_notes.py --version "$VERSION" --signed "$SIGNED" --commit "$GITHUB_SHA" \
+            --run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --abis "$ABIS" --out dist/RELEASE_NOTES.md
+          (cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: dist/
+          if-no-files-found: error
+      - name: Keep build logs and reports on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: failure-reports
+          path: |
+            **/build/reports/**
+            **/build/outputs/logs/**
+          if-no-files-found: ignore
+
+  draft-release:
+    name: Create DRAFT release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist
+      - name: Create the draft (does not publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          # Only regular files at the top of dist/ are attached: a folder cannot be uploaded as a release asset.
+          mapfile -t files < <(find dist -maxdepth 1 -type f | sort)
+          [ "${#files[@]}" -gt 0 ] || { echo "::error::dist/ holds no files"; exit 1; }
+          ls -l dist
+          gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --draft --prerelease --target "$GITHUB_SHA" --title "VidDown $TAG" --notes-file dist/RELEASE_NOTES.md

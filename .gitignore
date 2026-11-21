@@ -1,0 +1,16 @@
+.cache/
+build/
+*.part
+*.download
+__pycache__/
+*.pyc
+native/bundle.lock.proposed.json
+local.properties
+.gradle/
+*.jks
+*.keystore
+# NewPipeExtractor + nanojson are fetched at build time (scripts/fetch_newpipe.py), never committed
+third_party/NewPipeExtractor/
+third_party/nanojson/
+third_party/newpipe.resolved.json
+third_party/.newpipe-fetch-*/

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window background while the app starts: the same colour as the Compose background (see core Color.kt) -->
+    <color name="vd_window_background">#FFFFF8F5</color>
+</resources>

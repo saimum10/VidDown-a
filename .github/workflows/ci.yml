@@ -1,0 +1,102 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scripts:
+    name: Native bundle scripts and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install image libraries (icon tests)
+        run: python3 -m pip install --quiet pillow numpy
+      - name: Unit tests (no real network)
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Restore verified native bundle cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/native-bundle
+          key: native-bundle-${{ hashFiles('native/bundle.lock.json') }}
+      - name: Fetch and verify the pinned native bundle (all ABIs)
+        run: python3 scripts/fetch_native_bundle.py fetch --cache-dir .cache/native-bundle --out build/native
+      - name: Upload provenance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-bundle-provenance
+          path: build/native/BUILD_INFO.native.json
+          if-no-files-found: error
+
+  android:
+    name: Android build, unit tests and lint
+    needs: scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Detect Android project
+        id: detect
+        run: |
+          if [ -f gradlew ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No gradlew yet: the Android project does not exist (Phase 2). Android build, tests and lint were SKIPPED, not passed."
+          fi
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: steps.detect.outputs.present == 'true'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        if: steps.detect.outputs.present == 'true'
+        with:
+          distribution: temurin
+          # NewPipeExtractor's own build picks its JDK toolchain (17 for v0.27.x, 11 for v0.26.x and older, 21 only for its checkstyle,
+          # which we never run); 17 is listed last so it runs Gradle and the app build. 21 is installed only so a future toolchain bump does not break the build.
+          java-version: |
+            11
+            21
+            17
+      - name: Let Gradle toolchains find JDK 11, 17 and 21
+        if: steps.detect.outputs.present == 'true'
+        run: mkdir -p "$HOME/.gradle" && echo "org.gradle.java.installations.fromEnv=JAVA_HOME_11_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64" >> "$HOME/.gradle/gradle.properties"
+      - name: Fetch the LATEST NewPipeExtractor release (built from source; not stored in the repository)
+        if: steps.detect.outputs.present == 'true'
+        run: python3 scripts/fetch_newpipe.py ensure
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        if: steps.detect.outputs.present == 'true'
+      - name: Restore verified native bundle cache
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/native-bundle
+          key: native-bundle-${{ hashFiles('native/bundle.lock.json') }}
+      - name: Fetch and verify the pinned native bundle
+        if: steps.detect.outputs.present == 'true'
+        run: python3 scripts/fetch_native_bundle.py fetch --cache-dir .cache/native-bundle --out build/native
+      - name: Build debug, run unit tests and lint
+        if: steps.detect.outputs.present == 'true'
+        run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest :engine-api:test :engine-direct:test :engine-newpipe:test :engine-ytdlp:test :download:test :browser:test lintDebug -PnativeDir=build/native -PnativeAbis="$(python3 scripts/verified_abis.py)" -PsourceRepoUrl="${{ github.server_url }}/${{ github.repository }}"
+      - name: Upload reports and debug APK
+        if: always() && steps.detect.outputs.present == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-ci-outputs
+          path: |
+            **/build/outputs/apk/debug/*.apk
+            **/build/reports/**
+            **/build/test-results/**
+          if-no-files-found: warn
+          retention-days: 14

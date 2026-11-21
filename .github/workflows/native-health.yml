@@ -1,0 +1,35 @@
+name: native-bundle-health
+
+# Checks that the PINNED native bundle artifacts (one release per tool: yt-dlp, cpython, ffmpeg) are still published with the pinned size.
+# It never updates the manifest. A failure means: investigate, then use scripts/update_native_bundle.py propose.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Pinned artifacts reachable with the pinned size
+        run: python3 scripts/fetch_native_bundle.py check 2>&1 | tee health.log
+      - name: Re-verify a full download (SHA-256, archive, ABI) without using any cache
+        run: python3 scripts/fetch_native_bundle.py fetch --cache-dir "$RUNNER_TEMP/fresh-cache" --out "$RUNNER_TEMP/out" 2>&1 | tee -a health.log
+      - name: Report newer tool releases (information only, nothing is changed)
+        if: always()
+        run: python3 scripts/update_native_bundle.py discover 2>&1 | tee -a health.log
+      - name: Keep the log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-health-log
+          path: health.log
+          retention-days: 30

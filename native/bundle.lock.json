@@ -1,0 +1,170 @@
+{
+  "schema_version": 2,
+  "_comment": "Pinned native bundle manifest. Do not edit by hand: propose changes with scripts/update_native_bundle.py and review the diff. Never point this at main/master/latest/index.",
+  "status": "UNPINNED - nothing to do by hand: `python3 scripts/fetch_native_bundle.py fetch` (CI and local builds) takes the newest release of yt-dlp, cpython and ffmpeg from the bundle repository, verifies it and writes the pins over this file in the workspace. Commit the resolved file to freeze the versions. The `components` below are carried over from the previous pin (native-v2026.10.28) and are replaced when that happens.",
+  "repository": "https://github.com/saimumhabib/viddown-native-bundle",
+  "tools": {},
+  "integrity_model": {
+    "zip_sha256": "locally calculated from the downloaded file AND equal to the value listed in the release's SHA256SUMS.txt. Both come from the same GitHub repository/release, so this is a consistency check, NOT an independently authenticated upstream checksum.",
+    "inner_sha256": "taken from the SHA256SUMS file inside each zip and re-calculated locally; equal in all cases."
+  },
+  "components": [
+    {
+      "name": "cpython",
+      "tool": "cpython",
+      "version": "3.14.10",
+      "license": "PSF-2.0",
+      "upstream_commit": "b703b2c5e704341d61e367b9b940b77ed11dded0",
+      "notes": "Runs as a process through libviddown_python.so (launcher) + libpython3.14.so; stdlib is shipped as a zip that must be extracted at runtime.",
+      "license_verified": true,
+      "license_basis": "license string from the bundle's BUILD_INFO.json; license files ship in the zip under licenses/"
+    },
+    {
+      "name": "ffmpeg",
+      "tool": "ffmpeg",
+      "version": "8.1.3",
+      "license": "LGPL-2.1-or-later (as configured here; no --enable-gpl)",
+      "upstream_commit": "1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7",
+      "notes": "Remux-only minimal build: protocols file,pipe only (no network, no hls/dash demuxer); encoders aac,flac,pcm_s16le only (no mp3/opus encoder); libffmpeg.so and libffprobe.so are PIE executables, not JNI libraries.",
+      "license_verified": true,
+      "license_basis": "license string from the bundle's BUILD_INFO.json; license files ship in the zip under licenses/"
+    },
+    {
+      "name": "openssl",
+      "tool": "cpython",
+      "version": "3.5.9",
+      "license": "Apache-2.0",
+      "upstream_commit": "45e844fa2a14ec92d146bd8f5778ac130b6625fb",
+      "notes": "libssl_python.so / libcrypto_python.so",
+      "license_verified": true,
+      "license_basis": "license string from the bundle's BUILD_INFO.json; license files ship in the zip under licenses/"
+    },
+    {
+      "name": "libffi",
+      "tool": "cpython",
+      "version": "3.4.4",
+      "license": "MIT",
+      "upstream_commit": "f24180be1367f942824365b131ae894b9c769c7d",
+      "notes": "Linked into the _ctypes extension module.",
+      "license_verified": true,
+      "license_basis": "license string from the bundle's BUILD_INFO.json; license files ship in the zip under licenses/"
+    },
+    {
+      "name": "yt-dlp",
+      "tool": "yt-dlp",
+      "version": "2026.10.26",
+      "license": "Unlicense",
+      "notes": "Pure Python, inside ytdlp-site-packages.zip (read from the yt_dlp/version.py in the zip).",
+      "upstream_commit": "c91f8de0bfb3577894abad716eaaa01659e6bd14",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    },
+    {
+      "name": "py-certifi",
+      "tool": "yt-dlp",
+      "version": "2026.10.23",
+      "license": "MPL-2.0",
+      "notes": "Provides certifi/cacert.pem for TLS.",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    },
+    {
+      "name": "py-idna",
+      "tool": "yt-dlp",
+      "version": "3.20",
+      "license": "BSD-3-Clause",
+      "notes": "",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    },
+    {
+      "name": "py-urllib3",
+      "tool": "yt-dlp",
+      "version": "2.8.0",
+      "license": "MIT",
+      "notes": "",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    },
+    {
+      "name": "py-requests",
+      "tool": "yt-dlp",
+      "version": "2.34.2",
+      "license": "Apache-2.0",
+      "notes": "",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    },
+    {
+      "name": "py-charset-normalizer",
+      "tool": "yt-dlp",
+      "version": "3.5.2",
+      "license": "MIT",
+      "notes": "",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    },
+    {
+      "name": "py-mutagen",
+      "tool": "yt-dlp",
+      "version": "1.48.1",
+      "license": "GPL-2.0-or-later",
+      "notes": "",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    },
+    {
+      "name": "py-websockets",
+      "tool": "yt-dlp",
+      "version": "17.3",
+      "license": "BSD-3-Clause",
+      "notes": "",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    },
+    {
+      "name": "py-yt-dlp-ejs",
+      "tool": "yt-dlp",
+      "version": "0.8.0",
+      "license": "Unlicense",
+      "notes": "Needs an external JavaScript runtime that the bundle does NOT contain; some sites will fail to extract.",
+      "license_verified": false,
+      "license_basis": "AUTHOR RECOLLECTION of the upstream license. NOT verified: the bundle ships only name/version METADATA and no license text for this package."
+    }
+  ],
+  "licenses_note": "Components with license_verified=false must be checked against the upstream license text before any release; the bundle repo should ship those texts (open issue, see PROGRESS.txt).",
+  "abis": {
+    "arm64-v8a": {
+      "verification": {
+        "sha256": "NOT PINNED YET",
+        "zip_integrity_and_inner_checksums": "NOT PINNED YET",
+        "elf_machine_matches_abi": "NOT PINNED YET",
+        "runtime_on_device_or_emulator": "NOT VERIFIED - update this only after a real emulator/device test passed"
+      }
+    },
+    "armeabi-v7a": {
+      "verification": {
+        "sha256": "NOT PINNED YET",
+        "zip_integrity_and_inner_checksums": "NOT PINNED YET",
+        "elf_machine_matches_abi": "NOT PINNED YET",
+        "runtime_on_device_or_emulator": "NOT VERIFIED - update this only after a real emulator/device test passed"
+      }
+    },
+    "x86": {
+      "verification": {
+        "sha256": "NOT PINNED YET",
+        "zip_integrity_and_inner_checksums": "NOT PINNED YET",
+        "elf_machine_matches_abi": "NOT PINNED YET",
+        "runtime_on_device_or_emulator": "NOT VERIFIED - update this only after a real emulator/device test passed"
+      }
+    },
+    "x86_64": {
+      "verification": {
+        "sha256": "NOT PINNED YET",
+        "zip_integrity_and_inner_checksums": "NOT PINNED YET",
+        "elf_machine_matches_abi": "NOT PINNED YET",
+        "runtime_on_device_or_emulator": "NOT VERIFIED - update this only after a real emulator/device test passed"
+      }
+    }
+  }
+}
